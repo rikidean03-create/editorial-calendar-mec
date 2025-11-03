@@ -32,6 +32,7 @@ const postDateInput = document.getElementById('postDate');
 const postTimeInput = document.getElementById('postTime');
 const postDateHelper = document.getElementById('postDateHelper');
 const postTimeHelper = document.getElementById('postTimeHelper');
+const deletePostBtn = document.getElementById('deletePostBtn');
 
 // Inizializzazione
 document.addEventListener('DOMContentLoaded', function() {
@@ -41,6 +42,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     setupEventListeners();
+    setupBiometricUI();
 });
 
 // Event Listeners
@@ -66,9 +68,15 @@ function setupEventListeners() {
     // Helper per mostrare formati italiani
     postDateInput.addEventListener('input', updateHelpers);
     postTimeInput.addEventListener('input', updateHelpers);
+    // Elimina post in modalità modifica
+    deletePostBtn.addEventListener('click', onDeletePostClicked);
     
     // Keyboard shortcuts
     document.addEventListener('keydown', handleKeyboard);
+    
+    // Pulsanti biometria
+    if (enableBiometricBtn) enableBiometricBtn.addEventListener('click', registerBiometric);
+    if (biometricLoginBtn) biometricLoginBtn.addEventListener('click', loginWithBiometric);
 }
 
 // Autenticazione
@@ -87,12 +95,89 @@ function handleLogin(e) {
     }
 }
 
+// Biometria (WebAuthn) lato client
+async function setupBiometricUI() {
+    try {
+        const supported = !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+        const hasCredential = !!localStorage.getItem('webauthnCredentialId');
+        if (biometricLoginBtn) biometricLoginBtn.classList.toggle('hidden', !supported);
+        if (enableBiometricBtn) enableBiometricBtn.classList.toggle('hidden', !supported || hasCredential);
+    } catch (e) {
+        if (biometricLoginBtn) biometricLoginBtn.classList.add('hidden');
+        if (enableBiometricBtn) enableBiometricBtn.classList.add('hidden');
+    }
+}
+
+function uint8ArrayToBase64url(uint8) {
+    const b64 = btoa(String.fromCharCode(...uint8));
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function base64urlToUint8Array(base64url) {
+    const b64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+    const str = atob(b64);
+    const bytes = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i);
+    return bytes;
+}
+
+async function registerBiometric() {
+    try {
+        if (!window.PublicKeyCredential) throw new Error('not_supported');
+        const challenge = new Uint8Array(32);
+        crypto.getRandomValues(challenge);
+        const userId = new Uint8Array(16);
+        crypto.getRandomValues(userId);
+        const publicKey = {
+            challenge,
+            rp: { name: 'Calendario Editoriale MEC', id: window.location.hostname },
+            user: { id: userId, name: 'utente@mec', displayName: 'Utente MEC' },
+            pubKeyCredParams: [ { type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 } ],
+            authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+            timeout: 60000,
+            attestation: 'none'
+        };
+        const cred = await navigator.credentials.create({ publicKey });
+        const credId = uint8ArrayToBase64url(new Uint8Array(cred.rawId));
+        localStorage.setItem('webauthnCredentialId', credId);
+        showNotification('Impronta abilitata!');
+        setupBiometricUI();
+    } catch (e) {
+        alert('Impossibile abilitare l\'impronta su questo dispositivo.');
+    }
+}
+
+async function loginWithBiometric() {
+    try {
+        const credId = localStorage.getItem('webauthnCredentialId');
+        if (!credId) {
+            alert('Abilita prima l\'impronta.');
+            return;
+        }
+        const challenge = new Uint8Array(32);
+        crypto.getRandomValues(challenge);
+        const publicKey = {
+            challenge,
+            rpId: window.location.hostname,
+            allowCredentials: [ { type: 'public-key', id: base64urlToUint8Array(credId), transports: ['internal'] } ],
+            userVerification: 'required',
+            timeout: 60000
+        };
+        await navigator.credentials.get({ publicKey });
+        localStorage.setItem('authenticated', 'true');
+        showMainApp();
+    } catch (e) {
+        alert('Autenticazione biometrica fallita o annullata.');
+    }
+}
+
 function handleLogout() {
     localStorage.removeItem('authenticated');
     loginScreen.classList.remove('hidden');
     mainApp.classList.add('hidden');
     passwordInput.value = '';
     passwordInput.focus();
+    setupBiometricUI();
 }
 
 function showMainApp() {
@@ -213,6 +298,17 @@ function createPostElement(post) {
     // Tooltip con data/ora in formato italiano
     postElement.title = `${getPlatformLabel(post.platform)} — ${formatDateItalianFromISO(post.date)} alle ${formatTimeItalian(post.time)}`;
     
+    // Bottone di eliminazione rapida
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'post-delete';
+    deleteBtn.title = 'Elimina';
+    deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deletePost(post.id);
+    });
+    postElement.appendChild(deleteBtn);
+
     // Event listener per modificare il post
     postElement.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -248,6 +344,8 @@ function getPlatformLabel(platform) {
 function openModal(date = null) {
     editingPostId = null;
     document.getElementById('modalTitle').textContent = 'Nuovo Post';
+    // Nascondi pulsante elimina in modalità nuovo
+    if (deletePostBtn) deletePostBtn.classList.add('hidden');
     
     // Reset form
     postForm.reset();
@@ -274,6 +372,8 @@ function editPost(postId) {
     
     editingPostId = postId;
     document.getElementById('modalTitle').textContent = 'Modifica Post';
+    // Mostra pulsante elimina in modalità modifica
+    if (deletePostBtn) deletePostBtn.classList.remove('hidden');
     
     // Popola il form con i dati del post
     document.getElementById('postDate').value = post.date;
@@ -296,6 +396,15 @@ function closeModalHandler() {
     modalOverlay.classList.add('hidden');
     document.body.style.overflow = 'auto';
     editingPostId = null;
+    // Ripristina stato pulsante elimina
+    if (deletePostBtn) deletePostBtn.classList.add('hidden');
+}
+
+function onDeletePostClicked() {
+    if (!editingPostId) return;
+    // Riutilizza conferma e logica già esistente
+    deletePost(editingPostId);
+    closeModalHandler();
 }
 
 function handlePostSubmit(e) {

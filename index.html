@@ -19,6 +19,14 @@
                     <input type="password" id="passwordInput" placeholder="Password" required>
                 </div>
                 <button type="submit">Accedi</button>
+                <div style="margin-top: 12px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                    <button type="button" id="biometricLoginBtn" class="btn-secondary hidden">
+                        <i class="fas fa-fingerprint"></i> Accedi con impronta
+                    </button>
+                    <button type="button" id="enableBiometricBtn" class="btn-secondary hidden">
+                        <i class="fas fa-shield-alt"></i> Abilita impronta
+                    </button>
+                </div>
                 <div id="errorMessage" class="error-message"></div>
             </form>
         </div>
@@ -140,6 +148,9 @@
                 </div>
                 
                 <div class="form-actions">
+                    <button type="button" id="deletePostBtn" class="btn-danger hidden">
+                        <i class="fas fa-trash"></i> Elimina
+                    </button>
                     <button type="button" id="cancelPost" class="btn-secondary">Annulla</button>
                     <button type="submit" class="btn-primary">Salva Post</button>
                 </div>

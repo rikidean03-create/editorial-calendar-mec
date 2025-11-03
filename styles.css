@@ -302,6 +302,25 @@ body {
     white-space: nowrap;
 }
 
+.post-delete {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: #e03131;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    opacity: 0.8;
+}
+
+.post-delete:hover {
+    opacity: 1;
+}
+
+.post-delete i {
+    font-size: 14px;
+}
+
 /* Social Platform Colors */
 .facebook { color: #1877f2; }
 .instagram { color: #e4405f; }
@@ -447,6 +466,25 @@ body {
     margin-top: 30px;
 }
 
+ .btn-danger {
+     padding: 12px 20px;
+     border: none;
+     border-radius: 8px;
+     font-weight: 600;
+     cursor: pointer;
+     transition: all 0.3s ease;
+     display: flex;
+     align-items: center;
+     gap: 8px;
+     background: #e03131;
+     color: white;
+ }
+ 
+ .btn-danger:hover {
+     background: #c92a2a;
+     transform: translateY(-2px);
+ }
+ 
 .helper-text {
     margin-top: 6px;
     color: #6c757d;
