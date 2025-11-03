@@ -54,8 +54,10 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         if parsed.path == '/api/posts':
+            print('POST /api/posts')
             body = self._read_body()
             if not body:
+                print('POST body invalid or empty')
                 return self._send_json({'error': 'Invalid JSON'}, 400)
             posts = read_posts()
             # assegna id se mancante
@@ -63,6 +65,7 @@ class Handler(SimpleHTTPRequestHandler):
                 body['id'] = self._generate_id()
             posts.append(body)
             write_posts(posts)
+            print('POST saved id=', body['id'])
             return self._send_json(body, 201)
         return super().do_POST()
 
@@ -70,8 +73,10 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path.startswith('/api/posts/'):
             post_id = parsed.path.split('/')[-1]
+            print('PUT /api/posts/', post_id)
             body = self._read_body()
             if not body:
+                print('PUT body invalid or empty')
                 return self._send_json({'error': 'Invalid JSON'}, 400)
             posts = read_posts()
             updated = False
@@ -81,8 +86,10 @@ class Handler(SimpleHTTPRequestHandler):
                     updated = True
                     break
             if not updated:
+                print('PUT post not found')
                 return self._send_json({'error': 'Post not found'}, 404)
             write_posts(posts)
+            print('PUT updated id=', post_id)
             return self._send_json(body, 200)
         return super().do_PUT()
 
@@ -90,11 +97,14 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path.startswith('/api/posts/'):
             post_id = parsed.path.split('/')[-1]
+            print('DELETE /api/posts/', post_id)
             posts = read_posts()
             new_posts = [p for p in posts if p.get('id') != post_id]
             if len(new_posts) == len(posts):
+                print('DELETE post not found')
                 return self._send_json({'error': 'Post not found'}, 404)
             write_posts(new_posts)
+            print('DELETE ok id=', post_id)
             return self._send_json({'ok': True}, 200)
         return super().do_DELETE()
 

@@ -10,6 +10,7 @@ let currentDate = new Date();
 let posts = [];
 let editingPostId = null;
 const API_BASE = '/api';
+let postsRefreshIntervalId = null;
 
 // Elementi DOM
 const loginScreen = document.getElementById('loginScreen');
@@ -43,6 +44,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     setupEventListeners();
     setupBiometricUI();
+    // Non avviare l'auto-refresh finché non si mostra l'app principale
 });
 
 // Event Listeners
@@ -184,6 +186,7 @@ function showMainApp() {
     loginScreen.classList.add('hidden');
     mainApp.classList.remove('hidden');
     fetchPosts();
+    startAutoRefresh();
 }
 
 // Gestione Calendario
@@ -364,6 +367,8 @@ function openModal(date = null) {
     
     updateHelpers();
     showModal();
+    // Sospendi auto-refresh mentre il modal è aperto per evitare conflitti
+    stopAutoRefresh();
 }
 
 function editPost(postId) {
@@ -398,6 +403,8 @@ function closeModalHandler() {
     editingPostId = null;
     // Ripristina stato pulsante elimina
     if (deletePostBtn) deletePostBtn.classList.add('hidden');
+    // Riavvia auto-refresh dopo la chiusura del modal
+    startAutoRefresh();
 }
 
 function onDeletePostClicked() {
@@ -425,8 +432,9 @@ function handlePostSubmit(e) {
             fetchPosts();
             showNotification(editingPostId ? 'Post modificato con successo!' : 'Post aggiunto con successo!');
         })
-        .catch(() => {
-            alert('Errore nel salvataggio sul server');
+        .catch((err) => {
+            console.error('Errore salvataggio server:', err);
+            alert('Errore nel salvataggio sul server. Dettagli: ' + (err && err.message ? err.message : ''));
         });
 }
 
@@ -581,10 +589,18 @@ document.addEventListener('contextmenu', function(e) {
 });
 
 // Auto-save ogni 30 secondi
-setInterval(() => {
-    // Auto-refresh ogni 30 secondi per sincronizzare con il server
-    fetchPosts();
-}, 30000);
+function startAutoRefresh() {
+    if (postsRefreshIntervalId) return;
+    postsRefreshIntervalId = setInterval(() => {
+        fetchPosts();
+    }, 30000);
+}
+
+function stopAutoRefresh() {
+    if (!postsRefreshIntervalId) return;
+    clearInterval(postsRefreshIntervalId);
+    postsRefreshIntervalId = null;
+}
 
 // --- API Client ---
 async function fetchPosts() {
@@ -607,12 +623,20 @@ async function savePostToServer(postData) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(postData)
     });
-    if (!res.ok) throw new Error('save_failed');
+    if (!res.ok) {
+        let details = '';
+        try { details = await res.text(); } catch {}
+        throw new Error(`save_failed:${res.status}:${details}`);
+    }
     return res.json();
 }
 
 async function deletePostFromServer(postId) {
     const res = await fetch(`${API_BASE}/posts/${postId}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('delete_failed');
+    if (!res.ok) {
+        let details = '';
+        try { details = await res.text(); } catch {}
+        throw new Error(`delete_failed:${res.status}:${details}`);
+    }
     return res.json();
 }
