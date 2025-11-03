@@ -53,7 +53,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path == '/api/posts':
+        # Accetta sia /api/posts che /api/posts/
+        if parsed.path.rstrip('/') == '/api/posts':
             print('POST /api/posts')
             body = self._read_body()
             if not body:
@@ -72,7 +73,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_PUT(self):
         parsed = urlparse(self.path)
         if parsed.path.startswith('/api/posts/'):
-            post_id = parsed.path.split('/')[-1]
+            # supporta trailing slash
+            post_id = parsed.path.strip('/').split('/')[-1]
             print('PUT /api/posts/', post_id)
             body = self._read_body()
             if not body:
@@ -96,7 +98,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_DELETE(self):
         parsed = urlparse(self.path)
         if parsed.path.startswith('/api/posts/'):
-            post_id = parsed.path.split('/')[-1]
+            # supporta trailing slash
+            post_id = parsed.path.strip('/').split('/')[-1]
             print('DELETE /api/posts/', post_id)
             posts = read_posts()
             new_posts = [p for p in posts if p.get('id') != post_id]
