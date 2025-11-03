@@ -34,6 +34,10 @@ const postTimeInput = document.getElementById('postTime');
 const postDateHelper = document.getElementById('postDateHelper');
 const postTimeHelper = document.getElementById('postTimeHelper');
 const deletePostBtn = document.getElementById('deletePostBtn');
+const networkBanner = document.getElementById('networkBanner');
+const networkMessage = document.getElementById('networkMessage');
+const retryBtn = document.getElementById('retryBtn');
+const dismissBtn = document.getElementById('dismissBtn');
 
 // Inizializzazione
 document.addEventListener('DOMContentLoaded', function() {
@@ -76,9 +80,13 @@ function setupEventListeners() {
     // Keyboard shortcuts
     document.addEventListener('keydown', handleKeyboard);
     
-    // Pulsanti biometria
+    // Pulsanti biometria// Biometric buttons
     if (enableBiometricBtn) enableBiometricBtn.addEventListener('click', registerBiometric);
     if (biometricLoginBtn) biometricLoginBtn.addEventListener('click', loginWithBiometric);
+    
+    // Network banner
+    if (retryBtn) retryBtn.addEventListener('click', handleRetry);
+    if (dismissBtn) dismissBtn.addEventListener('click', dismissNetworkBanner);
 }
 
 // Autenticazione
@@ -186,6 +194,8 @@ function showMainApp() {
     loginScreen.classList.add('hidden');
     mainApp.classList.remove('hidden');
     fetchPosts();
+    // Prova a sincronizzare post offline se presenti
+    setTimeout(syncOfflinePosts, 1000);
     startAutoRefresh();
 }
 
@@ -434,7 +444,12 @@ function handlePostSubmit(e) {
         })
         .catch((err) => {
             console.error('Errore salvataggio server:', err);
-            alert('Errore nel salvataggio sul server. Dettagli: ' + (err && err.message ? err.message : ''));
+            if (err.message && err.message.includes('Post salvato offline')) {
+                // È un salvataggio offline riuscito, non mostrare errore
+                showNotification('Post salvato offline!');
+            } else {
+                alert('Errore nel salvataggio sul server. Dettagli: ' + (err && err.message ? err.message : ''));
+            }
         });
 }
 
@@ -609,8 +624,12 @@ async function fetchPosts() {
         if (!res.ok) throw new Error('failed');
         posts = await res.json();
         renderCalendar();
+        dismissNetworkBanner(); // Nascondi banner se tutto ok
     } catch (e) {
         console.error('Errore nel caricamento dei post dal server', e);
+        showNetworkBanner('Errore nel caricamento dei post. Verifica la connessione.');
+        // Carica da localStorage come fallback
+        loadPostsFromLocalStorage();
     }
 }
 
@@ -618,17 +637,31 @@ async function savePostToServer(postData) {
     const isUpdate = Boolean(postData.id);
     const url = isUpdate ? `${API_BASE}/posts/${postData.id}` : `${API_BASE}/posts`;
     const method = isUpdate ? 'PUT' : 'POST';
-    const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(postData)
-    });
-    if (!res.ok) {
-        let details = '';
-        try { details = await res.text(); } catch {}
-        throw new Error(`save_failed:${res.status}:${details}`);
+    
+    try {
+        const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(postData)
+        });
+        if (!res.ok) {
+            let details = '';
+            try { details = await res.text(); } catch {}
+            throw new Error(`save_failed:${res.status}:${details}`);
+        }
+        const result = await res.json();
+        // Salva anche in localStorage come backup
+        savePostToLocalStorage(result);
+        return result;
+    } catch (e) {
+        // Salva in localStorage se il server non è raggiungibile
+        if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
+            const savedPost = savePostToLocalStorage(postData);
+            showNetworkBanner('Post salvato offline. Sarà sincronizzato quando tornerà la connessione.');
+            return savedPost;
+        }
+        throw e;
     }
-    return res.json();
 }
 
 async function deletePostFromServer(postId) {
@@ -639,4 +672,103 @@ async function deletePostFromServer(postId) {
         throw new Error(`delete_failed:${res.status}:${details}`);
     }
     return res.json();
+}
+
+// --- Gestione Network Banner ---
+function showNetworkBanner(message) {
+    if (networkMessage) networkMessage.textContent = message;
+    if (networkBanner) networkBanner.classList.remove('hidden');
+}
+
+function dismissNetworkBanner() {
+    if (networkBanner) networkBanner.classList.add('hidden');
+}
+
+function showNotification(message) {
+    // Mostra una notifica temporanea
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed; top: 20px; right: 20px; z-index: 10000;
+        background: #4CAF50; color: white; padding: 12px 20px;
+        border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        font-family: Arial, sans-serif; font-size: 14px;
+    `;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 3000);
+}
+
+function handleRetry() {
+    dismissNetworkBanner();
+    fetchPosts();
+}
+
+// --- Gestione localStorage Fallback ---
+function savePostToLocalStorage(postData) {
+    // Genera ID se mancante
+    if (!postData.id) {
+        postData.id = 'offline_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+    
+    let offlinePosts = JSON.parse(localStorage.getItem('offlinePosts') || '[]');
+    const existingIndex = offlinePosts.findIndex(p => p.id === postData.id);
+    
+    if (existingIndex >= 0) {
+        offlinePosts[existingIndex] = postData;
+    } else {
+        offlinePosts.push(postData);
+    }
+    
+    localStorage.setItem('offlinePosts', JSON.stringify(offlinePosts));
+    
+    // Aggiorna anche i post locali per la visualizzazione
+    const localIndex = posts.findIndex(p => p.id === postData.id);
+    if (localIndex >= 0) {
+        posts[localIndex] = postData;
+    } else {
+        posts.push(postData);
+    }
+    renderCalendar();
+    
+    return postData;
+}
+
+function loadPostsFromLocalStorage() {
+    const offlinePosts = JSON.parse(localStorage.getItem('offlinePosts') || '[]');
+    if (offlinePosts.length > 0) {
+        posts = offlinePosts;
+        renderCalendar();
+        console.log('Caricati', offlinePosts.length, 'post da localStorage');
+    }
+}
+
+function syncOfflinePosts() {
+    const offlinePosts = JSON.parse(localStorage.getItem('offlinePosts') || '[]');
+    if (offlinePosts.length === 0) return;
+    
+    console.log('Sincronizzazione di', offlinePosts.length, 'post offline...');
+    
+    offlinePosts.forEach(async (post) => {
+        try {
+            if (post.id.startsWith('offline_')) {
+                // Nuovo post offline - invia come POST
+                delete post.id; // Rimuovi ID offline
+                await savePostToServer(post);
+            } else {
+                // Post esistente modificato offline - invia come PUT
+                await savePostToServer(post);
+            }
+        } catch (e) {
+            console.error('Errore sincronizzazione post:', post.id, e);
+        }
+    });
+    
+    // Pulisci localStorage dopo sincronizzazione
+    localStorage.removeItem('offlinePosts');
+    fetchPosts(); // Ricarica dal server
 }

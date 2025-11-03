@@ -34,6 +34,13 @@
 
     <!-- Applicazione Principale -->
     <div id="mainApp" class="main-app hidden">
+        <!-- Banner per errori di rete -->
+        <div id="networkBanner" class="network-banner hidden">
+            <span id="networkMessage">Errore di connessione al server</span>
+            <button id="retryBtn" class="retry-btn">Riprova</button>
+            <button id="dismissBtn" class="dismiss-btn">×</button>
+        </div>
+        
         <!-- Header -->
         <header class="header">
             <div class="header-content">
