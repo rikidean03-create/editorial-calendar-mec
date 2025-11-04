@@ -1,5 +1,5 @@
 // Configurazione
-const PASSWORD = 'mecshopping';
+const PASSWORD = '12345';
 const MONTHS = [
     'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
     'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
@@ -38,6 +38,12 @@ const networkBanner = document.getElementById('networkBanner');
 const networkMessage = document.getElementById('networkMessage');
 const retryBtn = document.getElementById('retryBtn');
 const dismissBtn = document.getElementById('dismissBtn');
+const dropboxConnectBtn = document.getElementById('dropboxConnectBtn');
+const dropboxSyncBtn = document.getElementById('dropboxSyncBtn');
+const noPasswordLoginBtn = document.getElementById('noPasswordLoginBtn');
+const exportBtn = document.getElementById('exportBtn');
+const importBtn = document.getElementById('importBtn');
+const importFileInput = document.getElementById('importFileInput');
 
 // Inizializzazione
 document.addEventListener('DOMContentLoaded', function() {
@@ -55,6 +61,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupEventListeners() {
     // Login
     loginForm.addEventListener('submit', handleLogin);
+    if (noPasswordLoginBtn) noPasswordLoginBtn.addEventListener('click', loginWithoutPassword);
     
     // Logout
     logoutBtn.addEventListener('click', handleLogout);
@@ -86,7 +93,38 @@ function setupEventListeners() {
     
     // Network banner
     if (retryBtn) retryBtn.addEventListener('click', handleRetry);
+
+    // Esporta calendario sul dispositivo
+    if (exportBtn) exportBtn.addEventListener('click', exportPosts);
+
+    // Importa calendario da file JSON
+    if (importBtn && importFileInput) {
+        importBtn.addEventListener('click', () => {
+            importFileInput.click();
+        });
+        importFileInput.addEventListener('change', (e) => {
+            importPosts(e);
+            // Resetta il valore per permettere nuovo import dello stesso file
+            importFileInput.value = '';
+        });
+    }
     if (dismissBtn) dismissBtn.addEventListener('click', dismissNetworkBanner);
+
+    // Dropbox sync
+    if (dropboxConnectBtn) dropboxConnectBtn.addEventListener('click', connectDropbox);
+    if (dropboxSyncBtn) dropboxSyncBtn.addEventListener('click', syncDropbox);
+
+    // Ascolta messaggi dal popup OAuth
+    window.addEventListener('message', (event) => {
+        try {
+            const data = event && event.data;
+            if (data && data.type === 'oauth_success' && data.provider === 'dropbox') {
+                showNotification('Dropbox collegato!');
+            }
+        } catch (e) {
+            // ignora
+        }
+    });
 }
 
 // Autenticazione
@@ -103,6 +141,12 @@ function handleLogin(e) {
         passwordInput.value = '';
         passwordInput.focus();
     }
+}
+
+function loginWithoutPassword() {
+    localStorage.setItem('authenticated', 'true');
+    showMainApp();
+    if (errorMessage) errorMessage.textContent = '';
 }
 
 // Biometria (WebAuthn) lato client
@@ -706,6 +750,32 @@ function showNotification(message) {
 function handleRetry() {
     dismissNetworkBanner();
     fetchPosts();
+}
+
+// --- Dropbox Integration ---
+function connectDropbox() {
+    // Apri flusso OAuth in popup per evitare schermata nera nel preview
+    const authWindow = window.open('/oauth/login?popup=1', 'dropboxAuth', 'width=600,height=700');
+    // Fallback se il popup è bloccato
+    if (!authWindow) {
+        window.location.href = '/oauth/login';
+    }
+}
+
+async function syncDropbox() {
+    try {
+        const res = await fetch('/dropbox/upload', { method: 'POST' });
+        if (!res.ok) {
+            let details = '';
+            try { details = await res.text(); } catch {}
+            showNetworkBanner('Errore sincronizzazione Dropbox: ' + details);
+            return;
+        }
+        const data = await res.json();
+        showNotification('Sincronizzazione Dropbox completata');
+    } catch (e) {
+        showNetworkBanner('Errore di rete durante la sincronizzazione Dropbox');
+    }
 }
 
 // --- Gestione localStorage Fallback ---

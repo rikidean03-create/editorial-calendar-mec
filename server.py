@@ -1,10 +1,15 @@
 import json
 import os
+import time
+import urllib.parse
+import urllib.request
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 POSTS_FILE = os.path.join(DATA_DIR, 'posts.json')
+CLIENT_SECRET_FILE = os.path.join(os.path.dirname(__file__), 'client_secret.json')
+TOKEN_FILE = os.path.join(os.path.dirname(__file__), 'token.json')
 
 os.makedirs(DATA_DIR, exist_ok=True)
 if not os.path.exists(POSTS_FILE):
@@ -49,6 +54,98 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == '/api/posts':
             posts = read_posts()
             return self._send_json(posts, 200)
+        # OAuth Dropbox: avvio login
+        if parsed.path == '/oauth/login':
+            query = urllib.parse.parse_qs(parsed.query or '')
+            popup = '1' in (query.get('popup') or [])
+            if not os.path.exists(CLIENT_SECRET_FILE):
+                return self._send_json({'error': 'client_secret.json mancante. Crea credenziali OAuth in Dropbox App Console.'}, 500)
+            with open(CLIENT_SECRET_FILE, 'r', encoding='utf-8') as f:
+                secrets = json.load(f)
+            # supporta top-level o nested
+            client_id = secrets.get('client_id') or secrets.get('web', {}).get('client_id') or secrets.get('installed', {}).get('client_id')
+            if not client_id:
+                return self._send_json({'error': 'client_id mancante in client_secret.json'}, 500)
+            redirect_uri = f"http://localhost:{self.server.server_port}/oauth/callback"
+            params = {
+                'client_id': client_id,
+                'redirect_uri': redirect_uri,
+                'response_type': 'code',
+                'token_access_type': 'offline',
+                'state': (str(int(time.time())) + ('|popup' if popup else '')),
+                'scope': 'files.content.write'
+            }
+            url = 'https://www.dropbox.com/oauth2/authorize?' + urllib.parse.urlencode(params)
+            self.send_response(302)
+            self.send_header('Location', url)
+            self.end_headers()
+            return
+        # OAuth Dropbox: callback scambio codice/token
+        if parsed.path == '/oauth/callback':
+            if not os.path.exists(CLIENT_SECRET_FILE):
+                return self._send_json({'error': 'client_secret.json mancante'}, 500)
+            query = urllib.parse.parse_qs(parsed.query or '')
+            code = (query.get('code') or [None])[0]
+            state = (query.get('state') or [''])[0]
+            is_popup = ('popup' in state) if state else False
+            if not code:
+                return self._send_json({'error': 'code mancante'}, 400)
+            with open(CLIENT_SECRET_FILE, 'r', encoding='utf-8') as f:
+                secrets = json.load(f)
+            client_id = secrets.get('client_id') or secrets.get('web', {}).get('client_id') or secrets.get('installed', {}).get('client_id')
+            client_secret = secrets.get('client_secret') or secrets.get('web', {}).get('client_secret') or secrets.get('installed', {}).get('client_secret')
+            if not client_id or not client_secret:
+                return self._send_json({'error': 'client_id/client_secret mancanti'}, 500)
+            redirect_uri = f"http://localhost:{self.server.server_port}/oauth/callback"
+            data = urllib.parse.urlencode({
+                'code': code,
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'redirect_uri': redirect_uri,
+                'grant_type': 'authorization_code',
+            }).encode('utf-8')
+            req = urllib.request.Request('https://api.dropboxapi.com/oauth2/token', data=data, method='POST')
+            req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+            try:
+                with urllib.request.urlopen(req) as resp:
+                    token_data = json.loads(resp.read().decode('utf-8'))
+            except Exception as e:
+                return self._send_json({'error': 'token_exchange_failed', 'details': str(e)}, 500)
+            token_data['created_at'] = int(time.time())
+            with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
+                json.dump(token_data, f, ensure_ascii=False, indent=2)
+            if is_popup:
+                # Restituisce una pagina che chiude il popup e notifica l'opener
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.end_headers()
+                html = (
+                    "<html><body><script>" 
+                    "try{window.opener&&window.opener.postMessage({type:'oauth_success',provider:'dropbox'},'*');}catch(e){}" 
+                    "window.close();" 
+                    "</script><p>Autenticazione completata. Puoi chiudere questa finestra.</p></body></html>"
+                )
+                self.wfile.write(html.encode('utf-8'))
+            else:
+                self.send_response(302)
+                self.send_header('Location', '/')
+                self.end_headers()
+            return
+        # Gestione errori di OAuth
+        if parsed.path == '/oauth/callback' and 'error' in (urllib.parse.parse_qs(parsed.query or '')):
+            q = urllib.parse.parse_qs(parsed.query or '')
+            err = (q.get('error') or [''])[0]
+            desc = (q.get('error_description') or [''])[0]
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.end_headers()
+            html = (
+                f"<html><body><h3>Errore OAuth: {err}</h3><p>{desc}</p>" 
+                "<script>try{window.opener&&window.opener.postMessage({type:'oauth_error',provider:'dropbox'},'*');}catch(e){}" 
+                "</script></body></html>"
+            )
+            self.wfile.write(html.encode('utf-8'))
+            return
         return super().do_GET()
 
     def do_POST(self):
@@ -68,6 +165,69 @@ class Handler(SimpleHTTPRequestHandler):
             write_posts(posts)
             print('POST saved id=', body['id'])
             return self._send_json(body, 201)
+        if parsed.path.rstrip('/') == '/dropbox/upload':
+            # Carica posts.json su Dropbox
+            if not os.path.exists(TOKEN_FILE):
+                return self._send_json({'error': 'not_authenticated', 'message': 'Collega Dropbox con /oauth/login'}, 401)
+            with open(CLIENT_SECRET_FILE, 'r', encoding='utf-8') as f:
+                secrets = json.load(f)
+            client_id = secrets.get('client_id') or secrets.get('web', {}).get('client_id') or secrets.get('installed', {}).get('client_id')
+            client_secret = secrets.get('client_secret') or secrets.get('web', {}).get('client_secret') or secrets.get('installed', {}).get('client_secret')
+            with open(TOKEN_FILE, 'r', encoding='utf-8') as f:
+                token_data = json.load(f)
+            access_token = token_data.get('access_token')
+            refresh_token = token_data.get('refresh_token')
+            expires_in = int(token_data.get('expires_in', 3600))
+            created_at = int(token_data.get('created_at', int(time.time())))
+            # Refresh se scaduto
+            if not access_token or (int(time.time()) - created_at) > (expires_in - 60):
+                if not refresh_token:
+                    return self._send_json({'error': 'no_refresh_token'}, 401)
+                data = urllib.parse.urlencode({
+                    'client_id': client_id,
+                    'client_secret': client_secret,
+                    'refresh_token': refresh_token,
+                    'grant_type': 'refresh_token',
+                }).encode('utf-8')
+                req = urllib.request.Request('https://api.dropboxapi.com/oauth2/token', data=data, method='POST')
+                req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+                try:
+                    with urllib.request.urlopen(req) as resp:
+                        refreshed = json.loads(resp.read().decode('utf-8'))
+                    token_data['access_token'] = refreshed.get('access_token')
+                    token_data['expires_in'] = refreshed.get('expires_in', 3600)
+                    token_data['created_at'] = int(time.time())
+                    with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
+                        json.dump(token_data, f, ensure_ascii=False, indent=2)
+                    access_token = token_data['access_token']
+                except Exception as e:
+                    return self._send_json({'error': 'refresh_failed', 'details': str(e)}, 500)
+
+            # Upload del file su Dropbox (sovrascrive)
+            try:
+                with open(POSTS_FILE, 'rb') as f:
+                    content_bytes = f.read()
+            except Exception as e:
+                return self._send_json({'error': 'read_failed', 'details': str(e)}, 500)
+            upload_url = 'https://content.dropboxapi.com/2/files/upload'
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/octet-stream',
+                'Dropbox-API-Arg': json.dumps({
+                    'path': '/CalendarioEditoriale.json',
+                    'mode': 'overwrite',
+                    'mute': False
+                })
+            }
+            req = urllib.request.Request(upload_url, data=content_bytes, method='POST')
+            for k, v in headers.items():
+                req.add_header(k, v)
+            try:
+                with urllib.request.urlopen(req) as resp:
+                    result = json.loads(resp.read().decode('utf-8'))
+                return self._send_json({'ok': True, 'id': result.get('id'), 'name': result.get('name')}, 200)
+            except Exception as e:
+                return self._send_json({'error': 'upload_failed', 'details': str(e)}, 500)
         return super().do_POST()
 
     def do_PUT(self):

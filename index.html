@@ -26,6 +26,9 @@
                     <button type="button" id="enableBiometricBtn" class="btn-secondary hidden">
                         <i class="fas fa-shield-alt"></i> Abilita impronta
                     </button>
+                    <button type="button" id="noPasswordLoginBtn" class="btn-secondary">
+                        <i class="fas fa-unlock"></i> Accedi senza password
+                    </button>
                 </div>
                 <div id="errorMessage" class="error-message"></div>
             </form>
@@ -49,12 +52,27 @@
                     <button id="addPostBtn" class="btn-primary">
                         <i class="fas fa-plus"></i> Nuovo Post
                     </button>
+                    <button id="dropboxConnectBtn" class="btn-secondary" title="Collega Dropbox">
+                        <i class="fas fa-link"></i> Connetti Dropbox
+                    </button>
+                    <button id="dropboxSyncBtn" class="btn-secondary" title="Sincronizza con Dropbox">
+                        <i class="fas fa-sync"></i> Sincronizza Dropbox
+                    </button>
+                    <button id="exportBtn" class="btn-secondary" title="Salva i dati sul dispositivo">
+                        <i class="fas fa-download"></i> Salva sul dispositivo
+                    </button>
+                    <button id="importBtn" class="btn-secondary" title="Importa dati da file JSON">
+                        <i class="fas fa-upload"></i> Importa da JSON
+                    </button>
                     <button id="logoutBtn" class="btn-secondary">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </button>
                 </div>
             </div>
         </header>
+
+        <!-- Input file nascosto per importare JSON -->
+        <input type="file" id="importFileInput" accept="application/json,.json" style="display:none" />
 
         <!-- Controlli Calendario -->
         <div class="calendar-controls">
