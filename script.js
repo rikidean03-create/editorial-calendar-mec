@@ -9,7 +9,13 @@ const MONTHS = [
 let currentDate = new Date();
 let posts = [];
 let editingPostId = null;
-const API_BASE = '/api';
+let API_BASE = (() => {
+    const origin = window.location.origin || '';
+    if (origin && origin.startsWith('http')) return `${origin}/api`;
+    const stored = localStorage.getItem('apiBase');
+    if (stored) return `${stored.replace(/\/$/, '')}/api`;
+    return '/api';
+})();
 let postsRefreshIntervalId = null;
 
 // Elementi DOM
@@ -40,6 +46,7 @@ const retryBtn = document.getElementById('retryBtn');
 const dismissBtn = document.getElementById('dismissBtn');
 const dropboxConnectBtn = document.getElementById('dropboxConnectBtn');
 const dropboxSyncBtn = document.getElementById('dropboxSyncBtn');
+const googleSyncBtn = document.getElementById('googleSyncBtn');
 const noPasswordLoginBtn = document.getElementById('noPasswordLoginBtn');
 const exportBtn = document.getElementById('exportBtn');
 const importBtn = document.getElementById('importBtn');
@@ -113,6 +120,8 @@ function setupEventListeners() {
     // Dropbox sync
     if (dropboxConnectBtn) dropboxConnectBtn.addEventListener('click', connectDropbox);
     if (dropboxSyncBtn) dropboxSyncBtn.addEventListener('click', syncDropbox);
+    // Google Drive sync
+    if (googleSyncBtn) googleSyncBtn.addEventListener('click', syncGoogleDrive);
 
     // Ascolta messaggi dal popup OAuth
     window.addEventListener('message', (event) => {
@@ -120,6 +129,11 @@ function setupEventListeners() {
             const data = event && event.data;
             if (data && data.type === 'oauth_success' && data.provider === 'dropbox') {
                 showNotification('Dropbox collegato!');
+            }
+            if (data && data.type === 'oauth_success' && data.provider === 'google') {
+                showNotification('Google Drive collegato!');
+                // tenta di sincronizzare subito dopo il collegamento
+                syncGoogleDrive();
             }
         } catch (e) {
             // ignora
@@ -671,7 +685,17 @@ async function fetchPosts() {
         dismissNetworkBanner(); // Nascondi banner se tutto ok
     } catch (e) {
         console.error('Errore nel caricamento dei post dal server', e);
-        showNetworkBanner('Errore nel caricamento dei post. Verifica la connessione.');
+        // Fallback: consenti di configurare l'indirizzo del server se non raggiungibile
+        const hasStored = !!localStorage.getItem('apiBase');
+        if (!hasStored) {
+            const input = prompt('Server non raggiungibile. Inserisci indirizzo del server (es. http://192.168.1.23:8000)');
+            if (input && /^https?:\/\//.test(input)) {
+                localStorage.setItem('apiBase', input);
+                API_BASE = `${input.replace(/\/$/, '')}/api`;
+                try { return await fetchPosts(); } catch {}
+            }
+        }
+        showNetworkBanner('Errore nel caricamento dei post. Apri l’app da http://<IP_DEL_PC>:8000 o configura l’indirizzo server.');
         // Carica da localStorage come fallback
         loadPostsFromLocalStorage();
     }
@@ -775,6 +799,30 @@ async function syncDropbox() {
         showNotification('Sincronizzazione Dropbox completata');
     } catch (e) {
         showNetworkBanner('Errore di rete durante la sincronizzazione Dropbox');
+    }
+}
+
+// --- Google Drive Integration ---
+async function syncGoogleDrive() {
+    try {
+        const res = await fetch('/google/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        if (!res.ok) {
+            let details = '';
+            try { details = await res.text(); } catch {}
+            if (res.status === 401 && details.includes('not_authenticated')) {
+                const authWindow = window.open('/google/login?popup=1', 'googleAuth', 'width=600,height=700');
+                if (!authWindow) {
+                    window.location.href = '/google/login';
+                }
+                return;
+            }
+            showNetworkBanner('Errore salvataggio su Google Drive: ' + details);
+            return;
+        }
+        const data = await res.json();
+        showNotification('Salvato su Google Drive!');
+    } catch (e) {
+        showNetworkBanner('Errore di rete durante il salvataggio su Google Drive');
     }
 }
 
