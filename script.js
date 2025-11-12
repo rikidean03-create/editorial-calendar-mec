@@ -484,6 +484,11 @@ function onDeletePostClicked() {
 
 function handlePostSubmit(e) {
     e.preventDefault();
+    // Attiva la validazione nativa del form (compatibile con mobile)
+    if (typeof postForm.reportValidity === 'function') {
+        const valid = postForm.reportValidity();
+        if (!valid) return;
+    }
     
     const formData = new FormData(postForm);
     const postData = {
@@ -502,11 +507,12 @@ function handlePostSubmit(e) {
         })
         .catch((err) => {
             console.error('Errore salvataggio server:', err);
-            if (err.message && err.message.includes('Post salvato offline')) {
-                // È un salvataggio offline riuscito, non mostrare errore
+            if (err && err.message && err.message.includes('Post salvato offline')) {
                 showNotification('Post salvato offline!');
+            } else if (err && err.message && err.message.includes('save_failed:400')) {
+                showNetworkBanner('Compila tutti i campi richiesti (data, ora, piattaforma, titolo).');
             } else {
-                alert('Errore nel salvataggio sul server. Dettagli: ' + (err && err.message ? err.message : ''));
+                showNetworkBanner('Errore nel salvataggio. Controlla la connessione e riprova.');
             }
         });
 }

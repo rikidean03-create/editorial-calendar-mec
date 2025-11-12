@@ -83,7 +83,8 @@ class Handler(SimpleHTTPRequestHandler):
             client_id = secrets.get('client_id') or secrets.get('web', {}).get('client_id') or secrets.get('installed', {}).get('client_id')
             if not client_id:
                 return self._send_json({'error': 'client_id mancante in client_secret.json'}, 500)
-            redirect_uri = f"http://localhost:{self.server.server_port}/oauth/callback"
+            base = os.environ.get('PUBLIC_BASE_URL') or f"http://localhost:{self.server.server_port}"
+            redirect_uri = f"{base}/oauth/callback"
             params = {
                 'client_id': client_id,
                 'redirect_uri': redirect_uri,
@@ -113,7 +114,8 @@ class Handler(SimpleHTTPRequestHandler):
             client_secret = secrets.get('client_secret') or secrets.get('web', {}).get('client_secret') or secrets.get('installed', {}).get('client_secret')
             if not client_id or not client_secret:
                 return self._send_json({'error': 'client_id/client_secret mancanti'}, 500)
-            redirect_uri = f"http://localhost:{self.server.server_port}/oauth/callback"
+            base = os.environ.get('PUBLIC_BASE_URL') or f"http://localhost:{self.server.server_port}"
+            redirect_uri = f"{base}/oauth/callback"
             data = urllib.parse.urlencode({
                 'code': code,
                 'client_id': client_id,
@@ -174,7 +176,8 @@ class Handler(SimpleHTTPRequestHandler):
             client_id = secrets.get('client_id') or secrets.get('web', {}).get('client_id') or secrets.get('installed', {}).get('client_id')
             if not client_id:
                 return self._send_json({'error': 'client_id mancante in google_client_secret.json'}, 500)
-            redirect_uri = f"http://localhost:{self.server.server_port}/google/callback"
+            base = os.environ.get('PUBLIC_BASE_URL') or f"http://localhost:{self.server.server_port}"
+            redirect_uri = f"{base}/google/callback"
             params = {
                 'client_id': client_id,
                 'redirect_uri': redirect_uri,
@@ -205,7 +208,8 @@ class Handler(SimpleHTTPRequestHandler):
             client_secret = secrets.get('client_secret') or secrets.get('web', {}).get('client_secret') or secrets.get('installed', {}).get('client_secret')
             if not client_id or not client_secret:
                 return self._send_json({'error': 'client_id/client_secret mancanti'}, 500)
-            redirect_uri = f"http://localhost:{self.server.server_port}/google/callback"
+            base = os.environ.get('PUBLIC_BASE_URL') or f"http://localhost:{self.server.server_port}"
+            redirect_uri = f"{base}/google/callback"
             data = urllib.parse.urlencode({
                 'code': code,
                 'client_id': client_id,
@@ -510,7 +514,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    port = 8000
+    port = int(os.environ.get('PORT', '8000'))
     server = HTTPServer(('', port), Handler)
     print(f"Serving with API on http://localhost:{port}")
     try:

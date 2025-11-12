@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: calendario-editoriale
+    env: docker
+    plan: free
+    autoDeploy: true
+    dockerfilePath: Dockerfile
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: PUBLIC_BASE_URL
+        value: https://YOUR-SERVICE.onrender.com
+      # Render imposta automaticamente PORT; il server lo legge già
+    healthCheckPath: /
