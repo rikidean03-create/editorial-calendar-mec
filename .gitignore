@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# Env
+.env
+
+# App data (gestita dal volume su Render)
+data/posts.json
+
+# OAuth secrets/tokens (non committare)
+client_secret.json
+google_client_secret.json
+token.json
+google_token.json
+
+# Node (se usato)
+node_modules/
